@@ -1,42 +1,29 @@
 name: Build Tweak
 
-on: [push]
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/sbingner/theos:latest  # This computer already has Theos installed!
+      
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Basic Tools
-        run: sudo apt-get update && sudo apt-get install -y make llvm clang
-
-      - name: Setup Theos
+      - name: Checkout Code
         uses: actions/checkout@v3
         with:
-          repository: theos/theos
-          path: theos
           submodules: recursive
 
-      - name: Setup iOS SDKs
-        uses: actions/checkout@v3
-        with:
-          repository: theos/sdks
-          path: theos/sdks
+      - name: Trust Git Directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Setup iOS Toolchain
+      - name: Build the Cheat
         run: |
-          curl -LO https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz
-          mkdir -p theos/toolchain/linux/iphone
-          tar -xf linux-ios-arm64-10.0.0.tar.gz -C theos/toolchain/linux/iphone --strip-components=1
-
-      - name: Build .deb
-        run: |
-          export THEOS=$(pwd)/theos
+          export THEOS=/opt/theos
           make package FINALPACKAGE=1
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
         with:
-          name: CriticalChams_Compiled
+          name: CriticalChams_Final
           path: packages/*.deb
