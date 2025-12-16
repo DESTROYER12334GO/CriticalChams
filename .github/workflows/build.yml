@@ -13,16 +13,18 @@ jobs:
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip
 
-      - name: Setup Theos
+      - name: Setup Theos (Lightweight)
         run: |
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          # We use --depth 1 to make it fast and small
+          git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Get iOS SDK
+      - name: Get iOS SDK (Lightweight)
         run: |
-          git clone https://github.com/theos/sdks.git $HOME/theos/sdks
+          # This was the cause of the crash. Now it downloads only what it needs.
+          git clone --depth 1 https://github.com/theos/sdks.git $HOME/theos/sdks
           
-      - name: Get Toolchain (Compiler)
+      - name: Get Toolchain
         run: |
           curl -LO https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz
           mkdir -p $HOME/theos/toolchain/linux/iphone
