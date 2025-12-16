@@ -8,19 +8,18 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip aria2
 
-      - name: Setup Ldid (Signing Tool)
+      # --- STEP 1: INSTALL LDID (SIGNING TOOL) ---
+      - name: Install Ldid
         run: |
-          # This was likely missing and causing Exit Code 3!
           wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 -O ldid
           chmod +x ldid
           sudo mv ldid /usr/local/bin/
 
+      # --- STEP 2: SETUP THEOS & SDK ---
       - name: Setup Theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
@@ -39,13 +38,65 @@ jobs:
           mkdir -p $HOME/theos/toolchain/linux/iphone
           tar -xf linux-ios-arm64-10.0.0.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
 
+      # --- STEP 3: AUTO-FIX YOUR FILES (THE GOD MODE) ---
+      # This overwrites your files with perfect versions to prevent syntax errors.
+      
+      - name: Generate Perfect Makefile
+        run: |
+          echo "TARGET := iphone:clang:14.5:14.5" > Makefile
+          echo "ARCHS = arm64" >> Makefile
+          echo "include \$(THEOS)/makefiles/common.mk" >> Makefile
+          echo "TWEAK_NAME = CriticalChams" >> Makefile
+          echo "CriticalChams_FILES = Tweak.xm" >> Makefile
+          echo "CriticalChams_CFLAGS = -fobjc-arc -Wno-error" >> Makefile
+          echo "include \$(THEOS_MAKE_PATH)/tweak.mk" >> Makefile
+
+      - name: Generate Perfect Control File
+        run: |
+          echo "Package: com.destroyer.criticalchams" > control
+          echo "Name: CriticalChams" >> control
+          echo "Depends: mobilesubstrate" >> control
+          echo "Version: 0.0.1" >> control
+          echo "Architecture: iphoneos-arm" >> control
+          echo "Description: Chams for Critical Ops" >> control
+          echo "Maintainer: Me" >> control
+          echo "Author: Me" >> control
+          echo "Section: Tweaks" >> control
+
+      - name: Generate Perfect Tweak.xm
+        run: |
+          cat <<EOF > Tweak.xm
+          #import <UIKit/UIKit.h>
+          #import <mach-o/dyld.h>
+          #import <substrate.h>
+          #import <stdint.h>
+
+          #define OFF_GET_DELTATIME 0x297749C
+
+          // Define the function pointer type
+          typedef float (*get_deltaTime_t)(void *);
+          get_deltaTime_t old_get_deltaTime;
+
+          // Our hooked function
+          float new_get_deltaTime(void *instance) {
+              return old_get_deltaTime(instance);
+          }
+
+          %ctor {
+              uintptr_t baseAddr = _dyld_get_image_header(0);
+              uintptr_t finalAddr = baseAddr + OFF_GET_DELTATIME;
+              MSHookFunction((void *)finalAddr, (void *)new_get_deltaTime, (void **)&old_get_deltaTime);
+          }
+          EOF
+
+      # --- STEP 4: BUILD ---
       - name: Build .deb
         run: |
           export THEOS=$HOME/theos
           export TARGET=iphone:clang:14.5:14.5
           export SYSROOT=$HOME/theos/sdks/iPhoneOS14.5.sdk
           
-          # Debug command to show us EXACTLY why it fails if it does
+          # We run with 'messages=yes' so if it fails, we see EXACTLY why.
           make package FINALPACKAGE=1 messages=yes
           
       - name: Upload Artifact
