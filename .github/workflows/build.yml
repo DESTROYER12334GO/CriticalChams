@@ -12,29 +12,40 @@ jobs:
           submodules: recursive
 
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip curl
+        run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip wget
+
+      - name: Configure Network (Fixes Error 128)
+        run: |
+          # This is the fix. We force Git to use a huge buffer so it doesn't timeout.
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 0
+          git config --global http.lowSpeedTime 999999
 
       - name: Setup Theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Setup Lightweight SDK
+      - name: Download Tiny SDK (Wget Mode)
         run: |
-          # We clone a "Headers Only" SDK. This is TINY and cannot fail.
-          # It mimics iOS 11.2, which is compatible with all modern cheats.
-          git clone --depth 1 https://github.com/kabiroberai/ios-sdk.git $HOME/theos/sdks/iPhoneOS11.2.sdk
-
+          # We use WGET instead of Curl. It is stronger against bad internet.
+          # We download iOS 11.2 because it is small and stable.
+          wget -q --show-progress https://github.com/kabiroberai/ios-sdk/archive/master.zip -O sdk.zip
+          
+          # Unzip it
+          unzip -q sdk.zip
+          mkdir -p $HOME/theos/sdks
+          mv ios-sdk-master $HOME/theos/sdks/iPhoneOS11.2.sdk
+          
       - name: Setup Toolchain
         run: |
-          curl -LO https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz
+          wget -q --show-progress https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz -O toolchain.tar.gz
           mkdir -p $HOME/theos/toolchain/linux/iphone
-          tar -xf linux-ios-arm64-10.0.0.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
+          tar -xf toolchain.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
 
       - name: Build .deb
         run: |
           export THEOS=$HOME/theos
-          # Force it to use the tiny SDK we just downloaded
           export TARGET=iphone:clang:11.2:11.2
           export SYSROOT=$HOME/theos/sdks/iPhoneOS11.2.sdk
           
