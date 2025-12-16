@@ -14,28 +14,28 @@ jobs:
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip aria2
 
+      - name: Setup Ldid (Signing Tool)
+        run: |
+          # This was likely missing and causing Exit Code 3!
+          wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 -O ldid
+          chmod +x ldid
+          sudo mv ldid /usr/local/bin/
+
       - name: Setup Theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Download SDK (Turbo Mode)
+      - name: Download SDK
         run: |
-          # We use aria2 with 16 connections (-x 16) to force the download through.
-          # This prevents the "Exit Code 128" timeout.
           aria2c -x 16 -s 16 https://github.com/xybp888/iOS-SDKs/releases/download/iOS-14.5/iPhoneOS14.5.sdk.zip
-          
-          # Unzip and Install
           unzip -q iPhoneOS14.5.sdk.zip
           mkdir -p $HOME/theos/sdks
           mv iPhoneOS14.5.sdk $HOME/theos/sdks/
 
       - name: Setup Toolchain
         run: |
-          # Download Toolchain
           aria2c -x 16 -s 16 https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz
-          
-          # Install Toolchain
           mkdir -p $HOME/theos/toolchain/linux/iphone
           tar -xf linux-ios-arm64-10.0.0.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
 
@@ -45,7 +45,8 @@ jobs:
           export TARGET=iphone:clang:14.5:14.5
           export SYSROOT=$HOME/theos/sdks/iPhoneOS14.5.sdk
           
-          make package FINALPACKAGE=1
+          # Debug command to show us EXACTLY why it fails if it does
+          make package FINALPACKAGE=1 messages=yes
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
