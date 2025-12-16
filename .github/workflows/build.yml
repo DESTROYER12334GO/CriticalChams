@@ -12,20 +12,20 @@ jobs:
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip aria2
 
-      # --- STEP 1: INSTALL LDID (SIGNING TOOL) ---
-      - name: Install Ldid
+      # --- 1. Fix the Signing Tool (Ldid) ---
+      - name: Setup Ldid
         run: |
           wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 -O ldid
           chmod +x ldid
           sudo mv ldid /usr/local/bin/
 
-      # --- STEP 2: SETUP THEOS & SDK ---
+      # --- 2. Setup Theos & SDK ---
       - name: Setup Theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Download SDK
+      - name: Download SDK (Fast)
         run: |
           aria2c -x 16 -s 16 https://github.com/xybp888/iOS-SDKs/releases/download/iOS-14.5/iPhoneOS14.5.sdk.zip
           unzip -q iPhoneOS14.5.sdk.zip
@@ -38,65 +38,52 @@ jobs:
           mkdir -p $HOME/theos/toolchain/linux/iphone
           tar -xf linux-ios-arm64-10.0.0.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
 
-      # --- STEP 3: AUTO-FIX YOUR FILES (THE GOD MODE) ---
-      # This overwrites your files with perfect versions to prevent syntax errors.
-      
-      - name: Generate Perfect Makefile
+      # --- 3. FORCE FIX THE CODE (This fixes Exit Code 3) ---
+      - name: Create Perfect Makefile
         run: |
-          echo "TARGET := iphone:clang:14.5:14.5" > Makefile
-          echo "ARCHS = arm64" >> Makefile
-          echo "include \$(THEOS)/makefiles/common.mk" >> Makefile
-          echo "TWEAK_NAME = CriticalChams" >> Makefile
-          echo "CriticalChams_FILES = Tweak.xm" >> Makefile
-          echo "CriticalChams_CFLAGS = -fobjc-arc -Wno-error" >> Makefile
-          echo "include \$(THEOS_MAKE_PATH)/tweak.mk" >> Makefile
+          printf "TARGET := iphone:clang:14.5:14.5\nARCHS = arm64\nGO_EASY_ON_ME = 1\ninclude \$(THEOS)/makefiles/common.mk\nTWEAK_NAME = CriticalChams\nCriticalChams_FILES = Tweak.xm\nCriticalChams_CFLAGS = -fobjc-arc -Wno-error\ninclude \$(THEOS_MAKE_PATH)/tweak.mk\n" > Makefile
 
-      - name: Generate Perfect Control File
-        run: |
-          echo "Package: com.destroyer.criticalchams" > control
-          echo "Name: CriticalChams" >> control
-          echo "Depends: mobilesubstrate" >> control
-          echo "Version: 0.0.1" >> control
-          echo "Architecture: iphoneos-arm" >> control
-          echo "Description: Chams for Critical Ops" >> control
-          echo "Maintainer: Me" >> control
-          echo "Author: Me" >> control
-          echo "Section: Tweaks" >> control
-
-      - name: Generate Perfect Tweak.xm
+      - name: Create Perfect Tweak.xm
         run: |
           cat <<EOF > Tweak.xm
           #import <UIKit/UIKit.h>
           #import <mach-o/dyld.h>
           #import <substrate.h>
-          #import <stdint.h>
 
+          // The memory address you found
           #define OFF_GET_DELTATIME 0x297749C
 
-          // Define the function pointer type
+          // Define the function type safely
           typedef float (*get_deltaTime_t)(void *);
           get_deltaTime_t old_get_deltaTime;
 
-          // Our hooked function
+          // Our new function
           float new_get_deltaTime(void *instance) {
               return old_get_deltaTime(instance);
           }
 
           %ctor {
-              uintptr_t baseAddr = _dyld_get_image_header(0);
-              uintptr_t finalAddr = baseAddr + OFF_GET_DELTATIME;
+              // We use 'unsigned long' to prevent the crash
+              unsigned long baseAddr = (unsigned long)_dyld_get_image_header(0);
+              unsigned long finalAddr = baseAddr + OFF_GET_DELTATIME;
+              
+              // Hook
               MSHookFunction((void *)finalAddr, (void *)new_get_deltaTime, (void **)&old_get_deltaTime);
           }
           EOF
 
-      # --- STEP 4: BUILD ---
+      - name: Create Perfect Control File
+        run: |
+          printf "Package: com.destroyer.criticalchams\nName: CriticalChams\nDepends: mobilesubstrate\nVersion: 0.0.1\nArchitecture: iphoneos-arm\nDescription: Critical Ops Chams\nMaintainer: Me\nAuthor: Me\nSection: Tweaks\n" > control
+
+      # --- 4. BUILD (With detailed error logs) ---
       - name: Build .deb
         run: |
           export THEOS=$HOME/theos
           export TARGET=iphone:clang:14.5:14.5
           export SYSROOT=$HOME/theos/sdks/iPhoneOS14.5.sdk
           
-          # We run with 'messages=yes' so if it fails, we see EXACTLY why.
+          # 'messages=yes' will show us the EXACT error if it fails again
           make package FINALPACKAGE=1 messages=yes
           
       - name: Upload Artifact
