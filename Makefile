@@ -1,13 +1,17 @@
-# Target the specific SDK we downloaded (14.5) to avoid version confusion
-TARGET := iphone:clang:14.5:14.5
+TARGET := iphone:clang:latest:7.0
 ARCHS = arm64
+
+# Ignore all warnings
+GO_EASY_ON_ME = 1
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = CriticalChams
 
-CriticalChams_FILES = Tweak.xm
-# -w tells the compiler to suppress ALL warnings
-CriticalChams_CFLAGS = -fobjc-arc -w
+# WILDCARD: This grabs Tweak.xm, tweak.xm, or whatever you named it.
+CriticalChams_FILES = $(wildcard *.xm)
+
+# Force the compiler to be lenient
+CriticalChams_CFLAGS = -fobjc-arc -w -Wno-error
 
 include $(THEOS_MAKE_PATH)/tweak.mk
