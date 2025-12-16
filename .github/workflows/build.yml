@@ -12,79 +12,77 @@ jobs:
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip aria2
 
-      # --- 1. Fix the Signing Tool (Ldid) ---
+      # --- 1. SETUP SIGNING (LDID) ---
       - name: Setup Ldid
         run: |
           wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 -O ldid
           chmod +x ldid
           sudo mv ldid /usr/local/bin/
 
-      # --- 2. Setup Theos & SDK ---
+      # --- 2. SETUP THEOS & SDK ---
       - name: Setup Theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Download SDK (Fast)
+      - name: Download SDK
         run: |
           aria2c -x 16 -s 16 https://github.com/xybp888/iOS-SDKs/releases/download/iOS-14.5/iPhoneOS14.5.sdk.zip
           unzip -q iPhoneOS14.5.sdk.zip
           mkdir -p $HOME/theos/sdks
           mv iPhoneOS14.5.sdk $HOME/theos/sdks/
 
-      - name: Setup Toolchain
+      # --- 3. FIX THE MISSING LIBRARY (The Likely Cause) ---
+      - name: Fix Substrate Library
         run: |
-          aria2c -x 16 -s 16 https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz
-          mkdir -p $HOME/theos/toolchain/linux/iphone
-          tar -xf linux-ios-arm64-10.0.0.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
+          # We manually download the file that is usually missing
+          curl -L -o $HOME/theos/lib/libsubstrate.tbd https://raw.githubusercontent.com/theos/sdks/master/iPhoneOS11.2.sdk/usr/lib/libsubstrate.tbd
+          # We also grab the header file
+          mkdir -p $HOME/theos/include
+          curl -L -o $HOME/theos/include/substrate.h https://raw.githubusercontent.com/theos/headers/master/CydiaSubstrate.h
 
-      # --- 3. FORCE FIX THE CODE (This fixes Exit Code 3) ---
-      - name: Create Perfect Makefile
+      # --- 4. GENERATE FILES (To ensure no typos) ---
+      - name: Create Makefile
         run: |
-          printf "TARGET := iphone:clang:14.5:14.5\nARCHS = arm64\nGO_EASY_ON_ME = 1\ninclude \$(THEOS)/makefiles/common.mk\nTWEAK_NAME = CriticalChams\nCriticalChams_FILES = Tweak.xm\nCriticalChams_CFLAGS = -fobjc-arc -Wno-error\ninclude \$(THEOS_MAKE_PATH)/tweak.mk\n" > Makefile
+          printf "TARGET := iphone:clang:14.5:14.5\nARCHS = arm64\ninclude \$(THEOS)/makefiles/common.mk\nTWEAK_NAME = CriticalChams\nCriticalChams_FILES = Tweak.xm\nCriticalChams_LIBRARIES = substrate\nCriticalChams_CFLAGS = -fobjc-arc -Wno-error\ninclude \$(THEOS_MAKE_PATH)/tweak.mk\n" > Makefile
 
-      - name: Create Perfect Tweak.xm
+      - name: Create Tweak.xm
         run: |
           cat <<EOF > Tweak.xm
           #import <UIKit/UIKit.h>
-          #import <mach-o/dyld.h>
           #import <substrate.h>
+          #import <mach-o/dyld.h>
+          #import <stdint.h>
 
-          // The memory address you found
           #define OFF_GET_DELTATIME 0x297749C
 
-          // Define the function type safely
           typedef float (*get_deltaTime_t)(void *);
           get_deltaTime_t old_get_deltaTime;
 
-          // Our new function
           float new_get_deltaTime(void *instance) {
               return old_get_deltaTime(instance);
           }
 
           %ctor {
-              // We use 'unsigned long' to prevent the crash
-              unsigned long baseAddr = (unsigned long)_dyld_get_image_header(0);
-              unsigned long finalAddr = baseAddr + OFF_GET_DELTATIME;
-              
-              // Hook
+              uintptr_t baseAddr = (uintptr_t)_dyld_get_image_header(0);
+              uintptr_t finalAddr = baseAddr + OFF_GET_DELTATIME;
               MSHookFunction((void *)finalAddr, (void *)new_get_deltaTime, (void **)&old_get_deltaTime);
           }
           EOF
 
-      - name: Create Perfect Control File
+      - name: Create Control File
         run: |
           printf "Package: com.destroyer.criticalchams\nName: CriticalChams\nDepends: mobilesubstrate\nVersion: 0.0.1\nArchitecture: iphoneos-arm\nDescription: Critical Ops Chams\nMaintainer: Me\nAuthor: Me\nSection: Tweaks\n" > control
 
-      # --- 4. BUILD (With detailed error logs) ---
+      # --- 5. BUILD WITH LOGS ---
       - name: Build .deb
         run: |
           export THEOS=$HOME/theos
           export TARGET=iphone:clang:14.5:14.5
           export SYSROOT=$HOME/theos/sdks/iPhoneOS14.5.sdk
           
-          # 'messages=yes' will show us the EXACT error if it fails again
-          make package FINALPACKAGE=1 messages=yes
+          # This runs the build and SAVES the error to a log file
+          make package FINALPACKAGE=1 messages=yes > build.log 2>&1 || (echo "BUILD FAILED! HERE IS THE ERROR:" && cat build.log && exit 1)
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
