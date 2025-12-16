@@ -11,19 +11,27 @@ jobs:
           submodules: recursive
 
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y make llvm clang git subversion curl
+        run: sudo apt-get update && sudo apt-get install -y make llvm clang git
 
       - name: Setup Theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Get iOS SDK (The SVN Trick)
+      - name: Get iOS SDK (Sparse Mode)
         run: |
-          # This is the magic command. It downloads ONLY the folder we need.
-          # No zips. No history. No crashing.
+          # 1. Create the folder
           mkdir -p $HOME/theos/sdks
-          svn export https://github.com/theos/sdks/trunk/iPhoneOS14.5.sdk $HOME/theos/sdks/iPhoneOS14.5.sdk
+          cd $HOME/theos/sdks
+          
+          # 2. Clone ONLY the file list (Download size: ~2MB)
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git .
+          
+          # 3. Tell git we only want the iOS 14.5 folder
+          git sparse-checkout set iPhoneOS14.5.sdk
+          
+          # 4. Download the actual files (Download size: ~50MB)
+          git checkout master
 
       - name: Get Toolchain
         run: |
