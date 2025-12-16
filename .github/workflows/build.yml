@@ -11,39 +11,29 @@ jobs:
           submodules: recursive
 
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y make llvm clang git 7zip curl
+        run: sudo apt-get update && sudo apt-get install -y make llvm clang git subversion curl
 
       - name: Setup Theos
         run: |
-          # 1. Clone Theos (Depth 1 = Tiny download)
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Get Tiny SDK
+      - name: Get iOS SDK (The SVN Trick)
         run: |
-          # 2. Download a STRIPPED SDK (Only 6MB!)
-          # This is the "Magic Bullet" to fix the crash.
-          curl -L -o sdk.7z https://github.com/chrisharper22/sdks/raw/master/iPhoneOS14.5.sdk.7z
-          
-          # 3. Extract using 7zip (Uses less RAM than unzip)
+          # This is the magic command. It downloads ONLY the folder we need.
+          # No zips. No history. No crashing.
           mkdir -p $HOME/theos/sdks
-          7z x sdk.7z -o$HOME/theos/sdks/
-          
+          svn export https://github.com/theos/sdks/trunk/iPhoneOS14.5.sdk $HOME/theos/sdks/iPhoneOS14.5.sdk
+
       - name: Get Toolchain
         run: |
-          # 4. Download the Compiler
-          curl -L -o toolchain.tar.gz https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz
-          
-          # 5. Extract
+          curl -LO https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64-10.0.0.tar.gz
           mkdir -p $HOME/theos/toolchain/linux/iphone
-          tar -xf toolchain.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
+          tar -xf linux-ios-arm64-10.0.0.tar.gz -C $HOME/theos/toolchain/linux/iphone --strip-components=1
 
       - name: Build .deb
         run: |
-          # 6. Build with "Low Memory" settings (-O0)
           export THEOS=$HOME/theos
-          export DEBUG=0
-          # We force the compiler to be gentle on RAM
           make package FINALPACKAGE=1
           
       - name: Upload Artifact
