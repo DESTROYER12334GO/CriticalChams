@@ -9,17 +9,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # --- 1. INSTALL MISSING PACKAGING TOOLS (Fixes Exit Code 3) ---
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip aria2
+        run: sudo apt-get update && sudo apt-get install -y make llvm clang git unzip aria2 fakeroot dpkg-dev libio-compress-perl
 
-      # --- 1. SETUP SIGNING (LDID) ---
+      # --- 2. SETUP LDID (Signing) ---
       - name: Setup Ldid
         run: |
           wget -q https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 -O ldid
           chmod +x ldid
           sudo mv ldid /usr/local/bin/
 
-      # --- 2. SETUP THEOS & SDK ---
+      # --- 3. SETUP THEOS & SDK ---
       - name: Setup Theos
         run: |
           git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
@@ -32,16 +33,15 @@ jobs:
           mkdir -p $HOME/theos/sdks
           mv iPhoneOS14.5.sdk $HOME/theos/sdks/
 
-      # --- 3. FIX THE MISSING LIBRARY (The Likely Cause) ---
+      # --- 4. FIX SUBSTRATE LIBRARY ---
       - name: Fix Substrate Library
         run: |
-          # We manually download the file that is usually missing
+          # Download the missing library that causes linker errors
           curl -L -o $HOME/theos/lib/libsubstrate.tbd https://raw.githubusercontent.com/theos/sdks/master/iPhoneOS11.2.sdk/usr/lib/libsubstrate.tbd
-          # We also grab the header file
           mkdir -p $HOME/theos/include
           curl -L -o $HOME/theos/include/substrate.h https://raw.githubusercontent.com/theos/headers/master/CydiaSubstrate.h
 
-      # --- 4. GENERATE FILES (To ensure no typos) ---
+      # --- 5. GENERATE CLEAN FILES ---
       - name: Create Makefile
         run: |
           printf "TARGET := iphone:clang:14.5:14.5\nARCHS = arm64\ninclude \$(THEOS)/makefiles/common.mk\nTWEAK_NAME = CriticalChams\nCriticalChams_FILES = Tweak.xm\nCriticalChams_LIBRARIES = substrate\nCriticalChams_CFLAGS = -fobjc-arc -Wno-error\ninclude \$(THEOS_MAKE_PATH)/tweak.mk\n" > Makefile
@@ -74,15 +74,16 @@ jobs:
         run: |
           printf "Package: com.destroyer.criticalchams\nName: CriticalChams\nDepends: mobilesubstrate\nVersion: 0.0.1\nArchitecture: iphoneos-arm\nDescription: Critical Ops Chams\nMaintainer: Me\nAuthor: Me\nSection: Tweaks\n" > control
 
-      # --- 5. BUILD WITH LOGS ---
+      # --- 6. BUILD ---
       - name: Build .deb
         run: |
           export THEOS=$HOME/theos
           export TARGET=iphone:clang:14.5:14.5
           export SYSROOT=$HOME/theos/sdks/iPhoneOS14.5.sdk
           
-          # This runs the build and SAVES the error to a log file
-          make package FINALPACKAGE=1 messages=yes > build.log 2>&1 || (echo "BUILD FAILED! HERE IS THE ERROR:" && cat build.log && exit 1)
+          # We separate the build steps to see exactly where it fails
+          make clean
+          make package FINALPACKAGE=1 messages=yes
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
